@@ -3,7 +3,8 @@ This script is written for MajesticRP MMS to sort screenshots to folders by cate
 To run this, you'll need python 3.10 + 
 I've used 3.10.2, but newer should be fine
 
-**Images should be in images folder!**
+## **Images should be in *images* folder!**
+
 In current folder would be generated output_texts and output_images, and app.log file.
  *Logs for now are just consecutively added to an end of file.*
 
