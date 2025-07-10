@@ -24,6 +24,7 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 ./ocr-merged.py
 
 ```
+This project is developed for windows + NVIDIA Gpu, very possible wont work on other gpus/linux
 
 Requirements.txt now contain pyinstaller, which is used to generate biiig exe file
 
