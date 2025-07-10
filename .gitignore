@@ -1,3 +1,6 @@
 venv
 output_texts
 output_images
+dist
+app.log
+build
