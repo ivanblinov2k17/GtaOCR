@@ -1,0 +1,1 @@
+Place your screenshots in this folder
