@@ -6,3 +6,4 @@ app.log
 build
 images/*.png
 images/*.jpg
+images/old
