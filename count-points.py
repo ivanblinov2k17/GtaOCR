@@ -1,8 +1,8 @@
 import os
 o = open('report.txt','w', encoding="utf-8")
 
-main_folder_path = 'E:\\samp_screens\\5-6'
-# main_folder_path = 'output_images'
+# main_folder_path = 'E:\\samp_screens\\5-6'
+main_folder_path = 'output_images'
 
 folders = ['heal', 'reanimation', 'vaccine']
 locations = ['ELSH', 'Sandy-Shores', 'Paleto-Bay']
