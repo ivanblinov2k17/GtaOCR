@@ -6,6 +6,8 @@ import re
 import shutil
 import json
 from rapidfuzz import fuzz, process
+import argparse
+from typing import Optional, Tuple
 
 # Configure logging
 logging.basicConfig(
@@ -15,47 +17,33 @@ logging.basicConfig(
     level=logging.INFO          # Minimum level to log
 )
 
-# OCR PART
+# === HELPERS ===
+def find_image(base_name: str, image_folder: str) -> Optional[str]:
+    for ext in ['.png', '.jpg', '.jpeg', '.bmp']:
+        candidate = os.path.join(image_folder, base_name + ext)
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
-# Create the reader once
-reader = easyocr.Reader(['en', 'ru'])
+def safe_filename(s: str) -> str:
+    return s.replace(":", "-").replace(".", "-")
 
-# Directory with images
-input_dir = 'images'  # change this if needed
-output_dir = 'output_texts'
-os.makedirs(output_dir, exist_ok=True)
-
-# Get all PNG and JPG files (adjust pattern if needed)
-image_paths = glob(os.path.join(input_dir, '*.png')) + glob(os.path.join(input_dir, '*.jpg'))
-
-# Process each image
-for image_path in image_paths:
-    results = reader.readtext(image_path)
-    
-    # Extract just the text
-    lines = [text for _, text, _ in results]
-
-    # Prepare output path
-    image_name = os.path.splitext(os.path.basename(image_path))[0]
-    txt_path = os.path.join(output_dir, f"{image_name}.txt")
-
-    # Save to file
-    with open(txt_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(lines))
-
-    print(f"Saved text from {image_path} to {txt_path}")
-    logging.info(f"Saved text from {image_path} to {txt_path}")
-
-
-# Sorting part 
-
-
-
-# === ЛОКАЦИИ ИЗ JSON ===
-def load_location_map(json_path):
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return {loc['name']: 'City' if loc['City'] == 1 else 'NotCity' for loc in data['locations']}
+# === ЛОКАЦИИ ИЗ PY ===
+def load_location_map(py_path):
+    import importlib.util
+    import sys
+    import os
+    try:
+        module_name = os.path.splitext(os.path.basename(py_path))[0]
+        spec = importlib.util.spec_from_file_location(module_name, py_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        locations = getattr(module, 'locations', [])
+        return {loc['name']: 'City' if loc.get('City') == 1 else 'NotCity' for loc in locations}
+    except Exception as e:
+        logging.error(f"Failed to load location map from py: {e}")
+        return {}
 
 # === ПАРСИНГ ДЕЙСТВИЯ ===
 def detect_action(text):
@@ -80,7 +68,6 @@ def detect_action(text):
                 if 1 <= len(name.split()) <= 2:
                     return "reanimation", name
     return None, None
-
 
 # === ДАТА + ОПРЕДЕЛЕНИЕ ДНЯ/НОЧИ ===
 def extract_datetime(text):
@@ -116,21 +103,43 @@ def detect_reanimation_location(text, reanimation_location_map):
                 return loc_name, reanimation_location_map[loc_name]
     return None, None
 
-# === ОСНОВНАЯ ЛОГИКА ===
-def process_files(text_folder, image_folder, output_root, location_json_path):
-    reanimation_location_map = load_location_map(location_json_path)
+# === OCR PART ===
+def ocr_images(input_dir: str, output_dir: str, force: bool = False):
+    os.makedirs(output_dir, exist_ok=True)
+    image_paths = glob(os.path.join(input_dir, '*.png')) + glob(os.path.join(input_dir, '*.jpg'))
+    reader = easyocr.Reader(['en', 'ru'])
+    for image_path in image_paths:
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
+        txt_path = os.path.join(output_dir, f"{image_name}.txt")
+        if not force and os.path.exists(txt_path):
+            logging.info(f"Skipping already processed: {image_path}")
+            continue
+        try:
+            results = reader.readtext(image_path)
+            lines = [text for _, text, _ in results]
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines))
+            print(f"Saved text from {image_path} to {txt_path}")
+            logging.info(f"Saved text from {image_path} to {txt_path}")
+        except Exception as e:
+            logging.error(f"OCR failed for {image_path}: {e}")
+            print(f"[!] OCR failed for {image_path}: {e}")
 
+# === MAIN SORTING LOGIC ===
+def process_files(text_folder, image_folder, output_root, location_py_path):
+    reanimation_location_map = load_location_map(location_py_path)
     for txt_file in os.listdir(text_folder):
         if not txt_file.lower().endswith(".txt"):
             continue
-
         txt_path = os.path.join(text_folder, txt_file)
-        with open(txt_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
+        try:
+            with open(txt_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            logging.error(f"Failed to read {txt_path}: {e}")
+            continue
         action_type, person_id = detect_action(content)
         dt_full, time_of_day = extract_datetime(content)
-
         if not action_type or not dt_full:
             # Place in 'various' if action or date is missing
             base_name = os.path.splitext(txt_file)[0]
@@ -150,16 +159,13 @@ def process_files(text_folder, image_folder, output_root, location_json_path):
                 print(f"[ ] Пропущено (нет действия или даты): {txt_file}")
                 logging.warning(f"[ ] Skipped (no action or date): {txt_file}")
             continue
-
         # === Определяем путь сохранения ===
         output_path = None
-
         if action_type == "reanimation":
             loc_name, city_flag = detect_reanimation_location(content, reanimation_location_map)
             if not loc_name:
                 print(f"[!] Локация не найдена для реанимации: {txt_file}")
                 logging.warning(f"[!] Location is not found for reanimation: {txt_file}")
-
                 continue
             output_path = os.path.join(output_root, action_type, city_flag, time_of_day)
         else:
@@ -169,35 +175,39 @@ def process_files(text_folder, image_folder, output_root, location_json_path):
                 logging.warning(f"[!] Location is not found for {action_type}: {txt_file}")
                 continue
             output_path = os.path.join(output_root, action_type, simple_loc)
-
         # === Ищем изображение ===
         base_name = os.path.splitext(txt_file)[0]
-        image_path = None
-        for ext in ['.png', '.jpg', '.jpeg', '.bmp']:
-            candidate = os.path.join(image_folder, base_name + ext)
-            if os.path.exists(candidate):
-                image_path = candidate
-                break
-
+        image_path = find_image(base_name, image_folder)
         if not image_path:
             print(f"[!] Изображение не найдено: {txt_file}")
             logging.warning(f"[!] Image is not found: {txt_file}")
-
             continue
-
         # === Сохраняем ===
         os.makedirs(output_path, exist_ok=True)
-        safe_date = dt_full.replace(":", "-").replace(".", "-")
-        new_name = f"{action_type.capitalize()} - {safe_date}{os.path.splitext(image_path)[1]}"
-        shutil.copy(image_path, os.path.join(output_path, new_name))
-        print(f"[✔] {action_type.capitalize()} → {new_name} → {output_path}")
-        logging.info(f"[+] {action_type.capitalize()} -> {new_name} -> {output_path}")
+        safe_date = safe_filename(dt_full)
+        new_name = f"{action_type.capitalize()} - {safe_date}"
+        if person_id:
+            new_name += f" - {person_id}"
+        new_name += os.path.splitext(image_path)[1]
+        try:
+            shutil.copy(image_path, os.path.join(output_path, new_name))
+            print(f"[✔] {action_type.capitalize()} → {new_name} → {output_path}")
+            logging.info(f"[+] {action_type.capitalize()} -> {new_name} -> {output_path}")
+        except Exception as e:
+            logging.error(f"Failed to copy {image_path} to {output_path}: {e}")
+            print(f"[!] Failed to copy {image_path} to {output_path}: {e}")
 
+def main():
+    parser = argparse.ArgumentParser(description="OCR and sort GTA screenshots.")
+    parser.add_argument('--input-dir', default='images', help='Input images directory')
+    parser.add_argument('--output-texts', default='output_texts', help='Output texts directory')
+    parser.add_argument('--output-images', default='output_images', help='Output images directory')
+    parser.add_argument('--location-py', default='gta-locations.py', help='Location path')
+    parser.add_argument('--force-ocr', action='store_true', help='Force OCR even if text files exist')
+    args = parser.parse_args()
 
-# === ПУТИ ===
-text_folder = "output_texts"
-image_folder = "images"
-output_root = "output_images"
-location_json_path = "gta-locations.json"
+    ocr_images(args.input_dir, args.output_texts, force=args.force_ocr)
+    process_files(args.output_texts, args.input_dir, args.output_images, args.location_py)
 
-process_files(text_folder, image_folder, output_root, location_json_path)
+if __name__ == "__main__":
+    main()
