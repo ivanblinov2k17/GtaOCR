@@ -1,7 +1,7 @@
 import os
 o = open('report.txt','w', encoding="utf-8")
 
-# main_folder_path = 'E:\\samp_screens\\5-6'
+# TODO gui???
 main_folder_path = 'output_images'
 
 folders = ['heal', 'reanimation', 'vaccine']
@@ -58,7 +58,7 @@ for category in ['heal', 'vaccine']:
             score = file_count * per_file_score
             total_score += score
             detailed_report.append(
-                f"{category.capitalize()} – {loc}: {file_count} files × {per_file_score} pts = {score}"
+                f"{category.capitalize()} – {loc}: {file_count} | {per_file_score} | {score}"
             )
 
 # Count and score 'reanimation'
@@ -75,14 +75,14 @@ for loc in reanimation_locations:
             reanimation_score += score
             total_score += score
             detailed_report.append(
-                f"Reanimation – {loc}/{time}: {file_count} files × {per_file_score} pts = {score}"
+                f"Reanimation – {loc}/{time}: {file_count} | {per_file_score} | {score}"
             )
 
 # Print the report
 print("\nDETAILED REPORT:", file=o)
 print("----------------------------", file=o)
 for line in detailed_report:
-    print(line)
+    print(line, file=o)
 print("----------------------------", file=o)
 print(f"TOTAL SCORE: {total_score}", file=o)
 if total_score > 0:

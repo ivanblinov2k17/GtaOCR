@@ -1,0 +1,20 @@
+
+DETAILED REPORT:
+----------------------------
+Heal – ELSH: 4 | 1 | 4
+Heal – Sandy-Shores: 11 | 2 | 22
+Heal – Paleto-Bay: 61 | 2 | 122
+Vaccine – ELSH: 2 | 3 | 6
+Vaccine – Sandy-Shores: 2 | 5 | 10
+Vaccine – Paleto-Bay: 9 | 5 | 45
+Reanimation – City/Day: 9 | 3 | 27
+Reanimation – City/Night: 14 | 5 | 70
+Reanimation – NotCity/Day: 26 | 4 | 104
+Reanimation – NotCity/Night: 28 | 6 | 168
+----------------------------
+TOTAL SCORE: 578
+Reanimation % of total: 369 pts → 63.84%
+⚠ To reach 70% reanimation score, you need at least 119 more reanimation points.
+✅ Total score target of 500 reached.
+🗑️ You can delete at least 51 non-reanimation points (51 worth of screenshots)
+   to meet the 70% reanimation threshold.

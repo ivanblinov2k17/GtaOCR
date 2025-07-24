@@ -132,9 +132,23 @@ def process_files(text_folder, image_folder, output_root, location_json_path):
         dt_full, time_of_day = extract_datetime(content)
 
         if not action_type or not dt_full:
-            print(f"[ ] Пропущено (нет действия или даты): {txt_file}")
-            logging.warning(f"[ ] Skipped (no action or date): {txt_file}")
-
+            # Place in 'various' if action or date is missing
+            base_name = os.path.splitext(txt_file)[0]
+            image_path = find_image(base_name, image_folder)
+            if image_path:
+                various_path = os.path.join(output_root, 'various')
+                os.makedirs(various_path, exist_ok=True)
+                new_name = f"Various - {base_name}{os.path.splitext(image_path)[1]}"
+                try:
+                    shutil.copy(image_path, os.path.join(various_path, new_name))
+                    print(f"[~] No action/date: {new_name} → {various_path}")
+                    logging.info(f"[~] No action/date: {new_name} -> {various_path}")
+                except Exception as e:
+                    logging.error(f"Failed to copy {image_path} to {various_path}: {e}")
+                    print(f"[!] Failed to copy {image_path} to {various_path}: {e}")
+            else:
+                print(f"[ ] Пропущено (нет действия или даты): {txt_file}")
+                logging.warning(f"[ ] Skipped (no action or date): {txt_file}")
             continue
 
         # === Определяем путь сохранения ===
