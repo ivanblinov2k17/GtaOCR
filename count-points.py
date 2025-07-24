@@ -1,4 +1,10 @@
+import argparse
 import os
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--target-score', type=int, help='Target total score')
+args = parser.parse_args()
+
 o = open('report.txt','w', encoding="utf-8")
 
 # TODO gui???
@@ -34,15 +40,18 @@ reanimation_score = 0
 detailed_report = []
 
 # Ask the user to enter the target total score
-while True:
-    try:
-        target_total_score = int(input("🎯 Enter your target total score: "))
-        if target_total_score > 0:
-            break
-        else:
-            print("Please enter a positive number.", file=o)
-    except ValueError:
-        print("Invalid input. Please enter a number.", file=o)
+if args.target_score is not None:
+    target_total_score = args.target_score
+else:
+    while True:
+        try:
+            target_total_score = int(input("🎯 Enter your target total score: "))
+            if target_total_score > 0:
+                break
+            else:
+                print("Please enter a positive number.", file=o)
+        except ValueError:
+            print("Invalid input. Please enter a number.", file=o)
 
 
 # Count and score 'heal' and 'vaccine'

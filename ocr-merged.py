@@ -8,6 +8,7 @@ import json
 from rapidfuzz import fuzz, process
 import argparse
 from typing import Optional, Tuple
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -210,4 +211,217 @@ def main():
     process_files(args.output_texts, args.input_dir, args.output_images, args.location_py)
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 1:
+        # --- TKINTER GUI ---
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+        
+        class App:
+            def __init__(self, root):
+                self.root = root
+                root.title("GTA OCR Sorter")
+                root.geometry("500x470")
+                
+                # Input dir
+                tk.Label(root, text="Input images directory:").pack(anchor='w', padx=10, pady=(10,0))
+                self.input_dir = tk.Entry(root, width=50)
+                self.input_dir.insert(0, "images")
+                self.input_dir.pack(padx=10)
+                tk.Button(root, text="Browse", command=self.browse_input).pack(padx=10, anchor='w')
+                
+                # Force OCR
+                self.force_ocr_var = tk.BooleanVar()
+                self.force_ocr = tk.Checkbutton(root, text="Force OCR (reprocess all images)", variable=self.force_ocr_var)
+                self.force_ocr.pack(anchor='w', padx=10, pady=(10,0))
+                
+                # Progress bar
+                from tkinter import ttk
+                self.progress = ttk.Progressbar(root, orient='horizontal', length=480, mode='determinate')
+                self.progress.pack(pady=(10,0), padx=10)
+                
+                # Log area
+                tk.Label(root, text="Log:").pack(anchor='w', padx=10, pady=(10,0))
+                self.log_text = tk.Text(root, height=7, width=60, state='disabled', bg='#222', fg='#0f0')
+                self.log_text.pack(padx=10, pady=(0,10), fill='x')
+                
+                # Start button
+                self.start_btn = tk.Button(root, text="START", bg="green", fg="white", font=("Arial", 18, "bold"), command=self.run_script)
+                self.start_btn.pack(pady=10, fill='x', padx=10)
+                
+                # Count Points button
+                self.points_btn = tk.Button(root, text="Count Points and make a report", bg="#4444aa", fg="white", font=("Arial", 14, "bold"), command=self.show_points_report)
+                self.points_btn.pack(pady=5, fill='x', padx=10)
+                
+            def browse_input(self):
+                d = filedialog.askdirectory()
+                if d:
+                    self.input_dir.delete(0, tk.END)
+                    self.input_dir.insert(0, d)
+            def log(self, msg):
+                self.log_text.config(state='normal')
+                self.log_text.insert('end', msg + '\n')
+                self.log_text.see('end')
+                self.log_text.config(state='disabled')
+            def set_progress(self, value, max_value=None):
+                if max_value is not None:
+                    self.progress['maximum'] = max_value
+                self.progress['value'] = value
+                self.root.update_idletasks()
+            def run_script(self):
+                import threading
+                def task():
+                    try:
+                        self.log_text.config(state='normal')
+                        self.log_text.delete('1.0', 'end')
+                        self.log_text.config(state='disabled')
+                        self.set_progress(0, 1)
+                        # Patch logging
+                        class GuiLogHandler(logging.Handler):
+                            def emit(inner_self, record):
+                                msg = inner_self.format(record)
+                                self.root.after(0, self.log, msg)
+                        for h in logging.root.handlers[:]:
+                            logging.root.removeHandler(h)
+                        handler = GuiLogHandler()
+                        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+                        logging.root.addHandler(handler)
+                        logging.root.setLevel(logging.INFO)
+                        # Use default values for hidden options
+                        input_dir = self.input_dir.get()
+                        output_texts = "output_texts"
+                        output_images = "output_images"
+                        location_py = "gta-locations.py"
+                        force = self.force_ocr_var.get()
+                        image_paths = glob(os.path.join(input_dir, '*.png')) + glob(os.path.join(input_dir, '*.jpg'))
+                        total_images = len(image_paths)
+                        self.set_progress(0, max(total_images, 1))
+                        # Wrap ocr_images and process_files for progress
+                        def ocr_images_gui(*args, **kwargs):
+                            reader = easyocr.Reader(['en', 'ru'])
+                            for idx, image_path in enumerate(image_paths):
+                                image_name = os.path.splitext(os.path.basename(image_path))[0]
+                                txt_path = os.path.join(output_texts, f"{image_name}.txt")
+                                if not force and os.path.exists(txt_path):
+                                    logging.info(f"Skipping already processed: {image_path}")
+                                    self.set_progress(idx+1)
+                                    continue
+                                try:
+                                    results = reader.readtext(image_path)
+                                    lines = [text for _, text, _ in results]
+                                    with open(txt_path, 'w', encoding='utf-8') as f:
+                                        f.write('\n'.join(lines))
+                                    logging.info(f"Saved text from {image_path} to {txt_path}")
+                                except Exception as e:
+                                    logging.error(f"OCR failed for {image_path}: {e}")
+                                self.set_progress(idx+1)
+                        def process_files_gui(*args, **kwargs):
+                            txt_files = [f for f in os.listdir(output_texts) if f.lower().endswith('.txt')]
+                            total_txt = len(txt_files)
+                            self.set_progress(0, max(total_txt, 1))
+                            for idx, txt_file in enumerate(txt_files):
+                                txt_path = os.path.join(output_texts, txt_file)
+                                try:
+                                    with open(txt_path, "r", encoding="utf-8") as f:
+                                        content = f.read()
+                                except Exception as e:
+                                    logging.error(f"Failed to read {txt_path}: {e}")
+                                    self.set_progress(idx+1)
+                                    continue
+                                action_type, person_id = detect_action(content)
+                                dt_full, time_of_day = extract_datetime(content)
+                                if not action_type or not dt_full:
+                                    base_name = os.path.splitext(txt_file)[0]
+                                    image_path = find_image(base_name, input_dir)
+                                    if image_path:
+                                        various_path = os.path.join(output_images, 'various')
+                                        os.makedirs(various_path, exist_ok=True)
+                                        new_name = f"Various - {base_name}{os.path.splitext(image_path)[1]}"
+                                        try:
+                                            shutil.copy(image_path, os.path.join(various_path, new_name))
+                                            logging.info(f"[~] No action/date: {new_name} -> {various_path}")
+                                        except Exception as e:
+                                            logging.error(f"Failed to copy {image_path} to {various_path}: {e}")
+                                    else:
+                                        logging.warning(f"[ ] Skipped (no action or date): {txt_file}")
+                                    self.set_progress(idx+1)
+                                    continue
+                                output_path = None
+                                reanimation_location_map = load_location_map(location_py)
+                                if action_type == "reanimation":
+                                    loc_name, city_flag = detect_reanimation_location(content, reanimation_location_map)
+                                    if not loc_name:
+                                        logging.warning(f"[!] Location is not found for reanimation: {txt_file}")
+                                        self.set_progress(idx+1)
+                                        continue
+                                    output_path = os.path.join(output_images, action_type, city_flag, time_of_day)
+                                else:
+                                    simple_loc = detect_simple_location(content)
+                                    if not simple_loc:
+                                        logging.warning(f"[!] Location is not found for {action_type}: {txt_file}")
+                                        self.set_progress(idx+1)
+                                        continue
+                                    output_path = os.path.join(output_images, action_type, simple_loc)
+                                base_name = os.path.splitext(txt_file)[0]
+                                image_path = find_image(base_name, input_dir)
+                                if not image_path:
+                                    logging.warning(f"[!] Image is not found: {txt_file}")
+                                    self.set_progress(idx+1)
+                                    continue
+                                os.makedirs(output_path, exist_ok=True)
+                                safe_date = safe_filename(dt_full)
+                                new_name = f"{action_type.capitalize()} - {safe_date}"
+                                if person_id:
+                                    new_name += f" - {person_id}"
+                                new_name += os.path.splitext(image_path)[1]
+                                try:
+                                    shutil.copy(image_path, os.path.join(output_path, new_name))
+                                    logging.info(f"[+] {action_type.capitalize()} -> {new_name} -> {output_path}")
+                                except Exception as e:
+                                    logging.error(f"Failed to copy {image_path} to {output_path}: {e}")
+                                self.set_progress(idx+1)
+                        ocr_images_gui()
+                        process_files_gui()
+                        self.set_progress(0, 1)
+                        messagebox.showinfo("Done", "Processing complete!")
+                    except Exception as e:
+                        messagebox.showerror("Error", str(e))
+                threading.Thread(target=task).start()
+        
+            def show_points_report(self):
+                import subprocess
+                import tkinter as tk
+                from tkinter import scrolledtext, Toplevel
+                try:
+                    # Run count-points.py and capture output
+                    result = subprocess.run(
+                        [sys.executable, 'count-points.py', '--target-score', '500'],
+                        capture_output=True, text=True, check=True
+                    )
+                    # Always read report.txt for the report
+                    try:
+                        with open('report.txt', 'r', encoding='utf-8') as f:
+                            output = f.read()
+                    except Exception as e:
+                        output = f"Could not read report.txt: {e}"
+                except subprocess.CalledProcessError as e:
+                    try:
+                        with open('report.txt', 'r', encoding='utf-8') as f:
+                            output = f.read()
+                    except Exception as e2:
+                        output = (e.stdout or '') + '\n' + (e.stderr or '') + f"\nCould not read report.txt: {e2}"
+                except Exception as e:
+                    output = str(e)
+                # Show in new window
+                win = Toplevel(self.root)
+                win.title("Points Report")
+                win.geometry("600x500")
+                txt = scrolledtext.ScrolledText(win, wrap='word', font=("Consolas", 11))
+                txt.pack(expand=True, fill='both')
+                txt.insert('1.0', output)
+                txt.config(state='disabled')
+        
+        root = tk.Tk()
+        app = App(root)
+        root.mainloop()
+    else:
+        main()
